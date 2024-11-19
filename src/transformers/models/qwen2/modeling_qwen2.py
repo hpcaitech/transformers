@@ -344,6 +344,7 @@ class Qwen2FlashAttention2(Qwen2Attention):
         past_key_value: Optional[Cache] = None,
         output_attentions: bool = False,
         use_cache: bool = False,
+        max_position_ids = None,
         **kwargs,
     ):
         if "padding_mask" in kwargs:
@@ -374,7 +375,8 @@ class Qwen2FlashAttention2(Qwen2Attention):
             kv_seq_len += past_key_value.get_usable_length(kv_seq_len, self.layer_idx)
 
         # Because the input can be padded, the absolute sequence length depends on the max position id.
-        rotary_seq_len = max(kv_seq_len, position_ids[:, -1].max().item()) + 1
+        # rotary_seq_len = max(kv_seq_len, position_ids[:, -1].max().item()) + 1
+        rotary_seq_len = max(kv_seq_len, max_position_ids) + 1
         cos, sin = self.rotary_emb(value_states, seq_len=rotary_seq_len)
 
         query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin, position_ids)
@@ -739,6 +741,7 @@ class Qwen2DecoderLayer(nn.Module):
         past_key_value: Optional[Tuple[torch.Tensor]] = None,
         output_attentions: Optional[bool] = False,
         use_cache: Optional[bool] = False,
+        max_position_ids=None,
         **kwargs,
     ) -> Tuple[torch.FloatTensor, Optional[Tuple[torch.FloatTensor, torch.FloatTensor]]]:
         if "padding_mask" in kwargs:
@@ -772,6 +775,7 @@ class Qwen2DecoderLayer(nn.Module):
             past_key_value=past_key_value,
             output_attentions=output_attentions,
             use_cache=use_cache,
+            max_position_ids=max_position_ids,
         )
         hidden_states = residual + hidden_states
 
@@ -951,6 +955,7 @@ class Qwen2Model(Qwen2PreTrainedModel):
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
+        max_position_ids=None,
     ) -> Union[Tuple, BaseModelOutputWithPast]:
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_hidden_states = (
@@ -1017,7 +1022,6 @@ class Qwen2Model(Qwen2PreTrainedModel):
                 (batch_size, seq_length),
                 inputs_embeds,
                 past_key_values_length,
-                sliding_window=self.config.sliding_window,
             )
         else:
             # 4d mask is passed through the layers
@@ -1049,6 +1053,7 @@ class Qwen2Model(Qwen2PreTrainedModel):
                     past_key_values,
                     output_attentions,
                     use_cache,
+                    max_position_ids,
                 )
             else:
                 layer_outputs = decoder_layer(
@@ -1058,6 +1063,7 @@ class Qwen2Model(Qwen2PreTrainedModel):
                     past_key_value=past_key_values,
                     output_attentions=output_attentions,
                     use_cache=use_cache,
+                    max_position_ids=max_position_ids,
                 )
 
             hidden_states = layer_outputs[0]
@@ -1132,6 +1138,7 @@ class Qwen2ForCausalLM(Qwen2PreTrainedModel):
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
+        max_position_ids=None,
     ) -> Union[Tuple, CausalLMOutputWithPast]:
         r"""
         Args:
@@ -1176,6 +1183,7 @@ class Qwen2ForCausalLM(Qwen2PreTrainedModel):
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
+            max_position_ids=max_position_ids
         )
 
         hidden_states = outputs[0]
