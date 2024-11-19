@@ -639,6 +639,7 @@ class Qwen2SdpaAttention(Qwen2Attention):
         past_key_value: Optional[Cache] = None,
         output_attentions: bool = False,
         use_cache: bool = False,
+        max_position_ids=None,
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
         if output_attentions:
             # TODO: Improve this warning with e.g. `model.config.attn_implementation = "manual"` once this is implemented.
@@ -730,8 +731,14 @@ class Qwen2DecoderLayer(nn.Module):
         self.self_attn = QWEN2_ATTENTION_CLASSES[config._attn_implementation](config, layer_idx)
 
         self.mlp = Qwen2MLP(config)
-        self.input_layernorm = Qwen2RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-        self.post_attention_layernorm = Qwen2RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        norm_cls = Qwen2RMSNorm
+        try:
+            from apex.normalization import FusedRMSNorm as ApexFusedRMSNorm
+            norm_cls = ApexFusedRMSNorm
+        except ImportError:
+            pass
+        self.input_layernorm = norm_cls(config.hidden_size, eps=config.rms_norm_eps)
+        self.post_attention_layernorm = norm_cls(config.hidden_size, eps=config.rms_norm_eps)
 
     def forward(
         self,
@@ -931,7 +938,14 @@ class Qwen2Model(Qwen2PreTrainedModel):
             [Qwen2DecoderLayer(config, layer_idx) for layer_idx in range(config.num_hidden_layers)]
         )
         self._attn_implementation = config._attn_implementation
-        self.norm = Qwen2RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+
+        norm_cls = Qwen2RMSNorm
+        try:
+            from apex.normalization import FusedRMSNorm as ApexFusedRMSNorm
+            norm_cls = ApexFusedRMSNorm
+        except ImportError:
+            pass
+        self.norm = norm_cls(config.hidden_size, eps=config.rms_norm_eps)
 
         self.gradient_checkpointing = False
         # Initialize weights and apply final processing
